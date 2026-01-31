@@ -13,8 +13,12 @@ import confetti from "canvas-confetti";
 interface Question {
   question: string;
   options?: string[];
-  answer: string;
+  correctAnswer: string;
   explanation: string;
+}
+
+interface HomeworkContent {
+  questions: Question[];
 }
 
 export default function HomeworkView() {
@@ -30,7 +34,8 @@ export default function HomeworkView() {
   const [completed, setCompleted] = useState(false);
 
   // Content type assertion
-  const content = homework?.content as unknown as Question[] || [];
+  const homeworkContent = homework?.content as unknown as HomeworkContent;
+  const content = homeworkContent?.questions || [];
   const currentQuestion = content[currentQuestionIdx];
 
   // Reset state when question changes
@@ -56,11 +61,11 @@ export default function HomeworkView() {
   const handleCheck = () => {
     let correct = false;
     if (homework?.type === "Multiple Choice") {
-      correct = selectedOption === currentQuestion.answer;
+      correct = selectedOption === currentQuestion.correctAnswer;
     } else {
       // Basic text matching, ignoring case and whitespace
       const normalizedInput = textAnswer.trim().toLowerCase();
-      const normalizedAnswer = currentQuestion.answer.trim().toLowerCase();
+      const normalizedAnswer = currentQuestion.correctAnswer.trim().toLowerCase();
       correct = normalizedInput === normalizedAnswer;
     }
 
@@ -97,6 +102,15 @@ export default function HomeworkView() {
   if (!homework) return (
     <div className="min-h-screen flex flex-col items-center justify-center p-4">
       <h2 className="text-2xl font-bold mb-4">Homework Not Found</h2>
+      <Link href="/">
+        <Button>Go Home</Button>
+      </Link>
+    </div>
+  );
+
+  if (!currentQuestion || content.length === 0) return (
+    <div className="min-h-screen flex flex-col items-center justify-center p-4">
+      <h2 className="text-2xl font-bold mb-4">No Questions Available</h2>
       <Link href="/">
         <Button>Go Home</Button>
       </Link>
@@ -168,7 +182,7 @@ export default function HomeworkView() {
                       let optionClass = "border-2 p-4 rounded-xl text-left transition-all duration-200 hover:border-primary/50 hover:bg-primary/5 ";
                       
                       if (isSubmitted) {
-                        if (option === currentQuestion.answer) optionClass += "bg-green-50 border-green-500 text-green-700 ";
+                        if (option === currentQuestion.correctAnswer) optionClass += "bg-green-50 border-green-500 text-green-700 ";
                         else if (isSelected) optionClass += "bg-red-50 border-red-500 text-red-700 ";
                         else optionClass += "border-border opacity-60 ";
                       } else {
@@ -212,7 +226,7 @@ export default function HomeworkView() {
                         </div>
                         {!isCorrect && (
                           <p className="ml-7">
-                            Correct answer: <span className="font-semibold">{currentQuestion.answer}</span>
+                            Correct answer: <span className="font-semibold">{currentQuestion.correctAnswer}</span>
                           </p>
                         )}
                       </div>
