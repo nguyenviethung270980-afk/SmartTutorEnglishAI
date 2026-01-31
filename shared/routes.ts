@@ -41,6 +41,14 @@ export const api = {
         200: z.array(z.custom<typeof homework.$inferSelect>()),
       },
     },
+    delete: {
+      method: 'DELETE' as const,
+      path: '/api/homework/:id',
+      responses: {
+        200: z.object({ success: z.boolean() }),
+        404: errorSchemas.notFound,
+      },
+    },
   },
 };
 

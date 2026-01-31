@@ -80,5 +80,13 @@ export async function registerRoutes(
     res.json(list);
   });
 
+  app.delete(api.homework.delete.path, async (req, res) => {
+    const deleted = await storage.deleteHomework(Number(req.params.id));
+    if (!deleted) {
+      return res.status(404).json({ message: 'Homework not found' });
+    }
+    res.json({ success: true });
+  });
+
   return httpServer;
 }

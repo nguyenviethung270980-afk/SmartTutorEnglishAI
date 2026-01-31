@@ -6,6 +6,7 @@ export interface IStorage {
   createHomework(homework: InsertHomework): Promise<Homework>;
   getHomework(id: number): Promise<Homework | undefined>;
   listHomework(): Promise<Homework[]>;
+  deleteHomework(id: number): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -30,6 +31,14 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(homework)
       .orderBy(desc(homework.createdAt));
+  }
+
+  async deleteHomework(id: number): Promise<boolean> {
+    const result = await db
+      .delete(homework)
+      .where(eq(homework.id, id))
+      .returning();
+    return result.length > 0;
   }
 }
 
