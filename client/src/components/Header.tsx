@@ -1,11 +1,15 @@
 import { Link, useLocation } from "wouter";
-import { GraduationCap, History, BookOpen } from "lucide-react";
+import { GraduationCap, History, BookOpen, LogOut, User } from "lucide-react";
 import { ThemeToggle } from "./ThemeToggle";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/hooks/use-auth";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger, DropdownMenuSeparator } from "@/components/ui/dropdown-menu";
 
 export function Header() {
   const [location] = useLocation();
   const isStudentView = location.includes('student=true');
+  const { user } = useAuth();
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
@@ -19,7 +23,7 @@ export function Header() {
           </span>
         </Link>
         <div className="flex items-center gap-2">
-          {!isStudentView && (
+          {!isStudentView && user && (
             <>
               <Link href="/history">
                 <Button variant="ghost" size="sm" data-testid="link-history">
@@ -36,6 +40,35 @@ export function Header() {
             </>
           )}
           <ThemeToggle />
+          {user && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" size="icon" className="rounded-full" data-testid="button-user-menu">
+                  <Avatar className="h-8 w-8">
+                    {user.profileImageUrl ? (
+                      <AvatarImage src={user.profileImageUrl} alt={user.firstName || 'User'} />
+                    ) : null}
+                    <AvatarFallback>
+                      <User className="h-4 w-4" />
+                    </AvatarFallback>
+                  </Avatar>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56">
+                <div className="px-2 py-1.5">
+                  <p className="text-sm font-medium">{user.firstName} {user.lastName}</p>
+                  <p className="text-xs text-muted-foreground">{user.email}</p>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem asChild>
+                  <a href="/api/logout" className="cursor-pointer" data-testid="button-logout">
+                    <LogOut className="w-4 h-4 mr-2" />
+                    Sign Out
+                  </a>
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
         </div>
       </div>
     </header>

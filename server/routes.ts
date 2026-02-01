@@ -4,6 +4,7 @@ import { storage } from "./storage";
 import { api } from "@shared/routes";
 import { z } from "zod";
 import OpenAI from "openai";
+import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -15,7 +16,12 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  app.post(api.homework.create.path, async (req, res) => {
+  // Setup authentication first
+  await setupAuth(app);
+  registerAuthRoutes(app);
+  
+  // Protected: Create homework (requires login)
+  app.post(api.homework.create.path, isAuthenticated, async (req, res) => {
     try {
       const input = api.homework.create.input.parse(req.body);
       
@@ -65,6 +71,7 @@ export async function registerRoutes(
     }
   });
 
+  // Public: Get homework (students can access via link)
   app.get(api.homework.get.path, async (req, res) => {
     const homework = await storage.getHomework(Number(req.params.id));
     if (!homework) {
@@ -73,12 +80,14 @@ export async function registerRoutes(
     res.json(homework);
   });
 
-  app.get(api.homework.list.path, async (req, res) => {
+  // Protected: List homework (requires login)
+  app.get(api.homework.list.path, isAuthenticated, async (req, res) => {
     const list = await storage.listHomework();
     res.json(list);
   });
 
-  app.delete(api.homework.delete.path, async (req, res) => {
+  // Protected: Delete homework (requires login)
+  app.delete(api.homework.delete.path, isAuthenticated, async (req, res) => {
     const deleted = await storage.deleteHomework(Number(req.params.id));
     if (!deleted) {
       return res.status(404).json({ message: 'Homework not found' });
@@ -86,7 +95,7 @@ export async function registerRoutes(
     res.json({ success: true });
   });
 
-  // Exam Submissions
+  // Public: Submit exam (students don't need login)
   app.post('/api/submissions', async (req, res) => {
     try {
       const submission = await storage.createExamSubmission(req.body);
@@ -97,18 +106,19 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/submissions', async (req, res) => {
+  // Protected: List submissions (requires login)
+  app.get('/api/submissions', isAuthenticated, async (req, res) => {
     const list = await storage.listExamSubmissions();
     res.json(list);
   });
 
-  app.get('/api/submissions/homework/:id', async (req, res) => {
+  app.get('/api/submissions/homework/:id', isAuthenticated, async (req, res) => {
     const list = await storage.getExamSubmissionsByHomework(Number(req.params.id));
     res.json(list);
   });
 
-  // Vocabulary
-  app.post('/api/vocabulary', async (req, res) => {
+  // Protected: Vocabulary (requires login)
+  app.post('/api/vocabulary', isAuthenticated, async (req, res) => {
     try {
       const word = await storage.createVocabularyWord(req.body);
       res.status(201).json(word);
@@ -118,12 +128,12 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/vocabulary', async (req, res) => {
+  app.get('/api/vocabulary', isAuthenticated, async (req, res) => {
     const list = await storage.listVocabularyWords();
     res.json(list);
   });
 
-  app.delete('/api/vocabulary/:id', async (req, res) => {
+  app.delete('/api/vocabulary/:id', isAuthenticated, async (req, res) => {
     const deleted = await storage.deleteVocabularyWord(Number(req.params.id));
     if (!deleted) {
       return res.status(404).json({ message: 'Word not found' });
