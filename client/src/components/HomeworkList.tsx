@@ -1,9 +1,13 @@
 import { Link } from "wouter";
 import { useHomeworkList } from "@/hooks/use-homework";
 import { formatDistanceToNow } from "date-fns";
-import { BookOpen, ChevronRight, Clock, Trash2, LinkIcon, Check } from "lucide-react";
+import { BookOpen, ChevronRight, Clock, Trash2, LinkIcon, Check, Settings } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useMutation } from "@tanstack/react-query";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useState } from "react";
@@ -13,6 +17,9 @@ export function HomeworkList() {
   const { data: homeworkList, isLoading } = useHomeworkList();
   const { toast } = useToast();
   const [copiedId, setCopiedId] = useState<number | null>(null);
+  const [timerMinutes, setTimerMinutes] = useState(0);
+  const [questionCount, setQuestionCount] = useState(0);
+  const [antiCheat, setAntiCheat] = useState(false);
 
   const deleteMutation = useMutation({
     mutationFn: async (id: number) => {
@@ -40,15 +47,17 @@ export function HomeworkList() {
     deleteMutation.mutate(id);
   };
 
-  const handleCopyLink = (e: React.MouseEvent, id: number) => {
-    e.preventDefault();
-    e.stopPropagation();
-    const url = `${window.location.origin}/homework/${id}?student=true`;
+  const handleCopyLink = (id: number) => {
+    let url = `${window.location.origin}/homework/${id}?student=true`;
+    if (timerMinutes > 0) url += `&timer=${timerMinutes}`;
+    if (questionCount > 0) url += `&questions=${questionCount}`;
+    if (antiCheat) url += `&anticheat=true`;
+    
     navigator.clipboard.writeText(url);
     setCopiedId(id);
     toast({
       title: "Student link copied",
-      description: "Share this link with your student to start the exercise.",
+      description: "Share this link with your student to start the exam.",
     });
     setTimeout(() => setCopiedId(null), 2000);
   };
@@ -65,7 +74,7 @@ export function HomeworkList() {
 
   if (!homeworkList || homeworkList.length === 0) {
     return (
-      <div className="text-center py-12 bg-white/30 rounded-3xl border border-dashed border-border/50">
+      <div className="text-center py-12 bg-card rounded-3xl border border-dashed">
         <BookOpen className="h-12 w-12 mx-auto text-muted-foreground/30 mb-3" />
         <h3 className="text-lg font-medium text-muted-foreground">No homework yet</h3>
         <p className="text-sm text-muted-foreground/80">Create your first exercise above!</p>
@@ -82,7 +91,7 @@ export function HomeworkList() {
       {sortedList.map((hw) => (
         <div 
           key={hw.id}
-          className="group bg-white rounded-2xl p-5 border border-border/50 hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300"
+          className="group bg-card rounded-2xl p-5 border hover:border-primary/30 hover:shadow-lg hover:shadow-primary/5 transition-all duration-300"
         >
           <div className="flex items-center justify-between gap-3">
             <Link 
@@ -97,9 +106,9 @@ export function HomeworkList() {
                 <div className="flex items-center gap-3 text-sm text-muted-foreground flex-wrap">
                   <span className={`
                     px-2 py-0.5 rounded-md text-xs font-medium
-                    ${hw.difficulty === 'Beginner' ? 'bg-green-100 text-green-700' : 
-                      hw.difficulty === 'Intermediate' ? 'bg-blue-100 text-blue-700' : 
-                      'bg-orange-100 text-orange-700'}
+                    ${hw.difficulty === 'Beginner' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400' : 
+                      hw.difficulty === 'Intermediate' ? 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400' : 
+                      'bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-400'}
                   `}>
                     {hw.difficulty}
                   </span>
@@ -111,19 +120,75 @@ export function HomeworkList() {
               </div>
             </Link>
             <div className="flex items-center gap-2">
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={(e) => handleCopyLink(e, hw.id)}
-                data-testid={`button-copy-link-${hw.id}`}
-                title="Copy link to share"
-              >
-                {copiedId === hw.id ? (
-                  <Check className="w-4 h-4 text-green-600" />
-                ) : (
-                  <LinkIcon className="w-4 h-4" />
-                )}
-              </Button>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    data-testid={`button-share-settings-${hw.id}`}
+                    title="Share with options"
+                  >
+                    <Settings className="w-4 h-4" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-72" align="end">
+                  <div className="space-y-4">
+                    <h4 className="font-semibold">Exam Settings</h4>
+                    <div className="space-y-3">
+                      <div>
+                        <Label htmlFor="timer" className="text-sm">Timer (minutes, 0 = no timer)</Label>
+                        <Input
+                          id="timer"
+                          type="number"
+                          min="0"
+                          value={timerMinutes}
+                          onChange={(e) => setTimerMinutes(parseInt(e.target.value) || 0)}
+                          className="mt-1"
+                          data-testid="input-timer"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="questions" className="text-sm">Question limit (0 = all)</Label>
+                        <Input
+                          id="questions"
+                          type="number"
+                          min="0"
+                          value={questionCount}
+                          onChange={(e) => setQuestionCount(parseInt(e.target.value) || 0)}
+                          className="mt-1"
+                          data-testid="input-question-count"
+                        />
+                      </div>
+                      <div className="flex items-center justify-between">
+                        <Label htmlFor="anticheat" className="text-sm">Anti-cheat mode</Label>
+                        <Switch
+                          id="anticheat"
+                          checked={antiCheat}
+                          onCheckedChange={setAntiCheat}
+                          data-testid="switch-anticheat"
+                        />
+                      </div>
+                    </div>
+                    <Button 
+                      onClick={() => handleCopyLink(hw.id)} 
+                      className="w-full"
+                      data-testid={`button-copy-configured-link-${hw.id}`}
+                    >
+                      {copiedId === hw.id ? (
+                        <>
+                          <Check className="w-4 h-4 mr-2" />
+                          Copied!
+                        </>
+                      ) : (
+                        <>
+                          <LinkIcon className="w-4 h-4 mr-2" />
+                          Copy Student Link
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </PopoverContent>
+              </Popover>
               <Button
                 size="icon"
                 variant="ghost"

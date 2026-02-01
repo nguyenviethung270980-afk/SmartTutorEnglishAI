@@ -5,7 +5,6 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import OpenAI from "openai";
 
-// Initialize OpenAI client using the integration env vars
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
@@ -20,7 +19,6 @@ export async function registerRoutes(
     try {
       const input = api.homework.create.input.parse(req.body);
       
-      // Generate content using OpenAI
       const prompt = `Generate a ${input.difficulty} level English homework exercise about "${input.topic}". 
       The format should be "${input.type}".
       Return ONLY a JSON object with a "questions" array. 
@@ -84,6 +82,51 @@ export async function registerRoutes(
     const deleted = await storage.deleteHomework(Number(req.params.id));
     if (!deleted) {
       return res.status(404).json({ message: 'Homework not found' });
+    }
+    res.json({ success: true });
+  });
+
+  // Exam Submissions
+  app.post('/api/submissions', async (req, res) => {
+    try {
+      const submission = await storage.createExamSubmission(req.body);
+      res.status(201).json(submission);
+    } catch (err) {
+      console.error("Error creating submission:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get('/api/submissions', async (req, res) => {
+    const list = await storage.listExamSubmissions();
+    res.json(list);
+  });
+
+  app.get('/api/submissions/homework/:id', async (req, res) => {
+    const list = await storage.getExamSubmissionsByHomework(Number(req.params.id));
+    res.json(list);
+  });
+
+  // Vocabulary
+  app.post('/api/vocabulary', async (req, res) => {
+    try {
+      const word = await storage.createVocabularyWord(req.body);
+      res.status(201).json(word);
+    } catch (err) {
+      console.error("Error creating vocabulary word:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  app.get('/api/vocabulary', async (req, res) => {
+    const list = await storage.listVocabularyWords();
+    res.json(list);
+  });
+
+  app.delete('/api/vocabulary/:id', async (req, res) => {
+    const deleted = await storage.deleteVocabularyWord(Number(req.params.id));
+    if (!deleted) {
+      return res.status(404).json({ message: 'Word not found' });
     }
     res.json({ success: true });
   });

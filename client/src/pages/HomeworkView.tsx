@@ -1,13 +1,16 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useRoute, Link, useSearch } from "wouter";
 import { useHomework } from "@/hooks/use-homework";
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, RefreshCcw, Trophy, Target, Star } from "lucide-react";
+import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, RefreshCcw, Trophy, Target, Star, Timer, Printer, Shield } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import confetti from "canvas-confetti";
+import { useMutation } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
+import { useToast } from "@/hooks/use-toast";
 
 interface Question {
   question: string;
@@ -20,13 +23,29 @@ interface HomeworkContent {
   questions: Question[];
 }
 
+function shuffleArray<T>(array: T[]): T[] {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 export default function HomeworkView() {
   const [, params] = useRoute("/homework/:id");
   const homeworkId = params ? parseInt(params.id) : 0;
   const { data: homework, isLoading } = useHomework(homeworkId);
   const searchString = useSearch();
-  const isStudentView = new URLSearchParams(searchString).get('student') === 'true';
+  const searchParams = new URLSearchParams(searchString);
+  const isStudentView = searchParams.get('student') === 'true';
+  const antiCheatEnabled = searchParams.get('anticheat') === 'true';
+  const timerMinutes = parseInt(searchParams.get('timer') || '0');
+  const questionLimit = parseInt(searchParams.get('questions') || '0');
+  const { toast } = useToast();
 
+  const [studentName, setStudentName] = useState("");
+  const [examStarted, setExamStarted] = useState(false);
   const [currentQuestionIdx, setCurrentQuestionIdx] = useState(0);
   const [selectedOption, setSelectedOption] = useState<string | null>(null);
   const [textAnswer, setTextAnswer] = useState("");
@@ -35,12 +54,78 @@ export default function HomeworkView() {
   const [completed, setCompleted] = useState(false);
   const [score, setScore] = useState(0);
   const [answeredQuestions, setAnsweredQuestions] = useState<boolean[]>([]);
+  const [timeLeft, setTimeLeft] = useState(timerMinutes * 60);
+  const [startTime] = useState(Date.now());
+  const printRef = useRef<HTMLDivElement>(null);
 
   const homeworkContent = homework?.content as unknown as HomeworkContent;
-  const content = homeworkContent?.questions || [];
+  const allQuestions = homeworkContent?.questions || [];
+  
+  const randomizedQuestions = useMemo(() => {
+    let questions = shuffleArray(allQuestions);
+    if (questionLimit > 0 && questionLimit < questions.length) {
+      questions = questions.slice(0, questionLimit);
+    }
+    return questions.map(q => ({
+      ...q,
+      options: q.options ? shuffleArray(q.options) : undefined
+    }));
+  }, [allQuestions, questionLimit]);
+
+  const content = randomizedQuestions;
   const currentQuestion = content[currentQuestionIdx];
   const totalQuestions = content.length;
   const percentage = totalQuestions > 0 ? Math.round((score / totalQuestions) * 100) : 0;
+
+  // Anti-cheat: disable copy/paste/right-click
+  useEffect(() => {
+    if (!antiCheatEnabled || !examStarted) return;
+
+    const preventCopy = (e: ClipboardEvent) => {
+      e.preventDefault();
+      toast({ title: "Copying is disabled", description: "Anti-cheat mode is active.", variant: "destructive" });
+    };
+    const preventPaste = (e: ClipboardEvent) => {
+      e.preventDefault();
+      toast({ title: "Pasting is disabled", description: "Anti-cheat mode is active.", variant: "destructive" });
+    };
+    const preventContextMenu = (e: MouseEvent) => {
+      e.preventDefault();
+    };
+    const preventSelect = (e: Event) => {
+      e.preventDefault();
+    };
+
+    document.addEventListener('copy', preventCopy);
+    document.addEventListener('paste', preventPaste);
+    document.addEventListener('contextmenu', preventContextMenu);
+    document.addEventListener('selectstart', preventSelect);
+
+    return () => {
+      document.removeEventListener('copy', preventCopy);
+      document.removeEventListener('paste', preventPaste);
+      document.removeEventListener('contextmenu', preventContextMenu);
+      document.removeEventListener('selectstart', preventSelect);
+    };
+  }, [antiCheatEnabled, examStarted, toast]);
+
+  // Timer countdown
+  useEffect(() => {
+    if (!examStarted || timerMinutes <= 0 || completed) return;
+    
+    const interval = setInterval(() => {
+      setTimeLeft(prev => {
+        if (prev <= 1) {
+          setCompleted(true);
+          clearInterval(interval);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [examStarted, timerMinutes, completed]);
 
   useEffect(() => {
     setSelectedOption(null);
@@ -59,6 +144,30 @@ export default function HomeworkView() {
       });
     }
   }, [completed, percentage]);
+
+  const submitMutation = useMutation({
+    mutationFn: async (data: { homeworkId: number; studentName: string; score: number; totalQuestions: number; percentage: number; answers: boolean[]; timeSpent: number }) => {
+      await apiRequest("POST", "/api/submissions", data);
+    },
+    onSuccess: () => {
+      toast({ title: "Results submitted", description: "Your teacher will see your score." });
+    },
+  });
+
+  useEffect(() => {
+    if (completed && isStudentView && studentName) {
+      const timeSpent = Math.floor((Date.now() - startTime) / 1000);
+      submitMutation.mutate({
+        homeworkId,
+        studentName,
+        score,
+        totalQuestions,
+        percentage,
+        answers: answeredQuestions,
+        timeSpent,
+      });
+    }
+  }, [completed]);
 
   const handleCheck = () => {
     let correct = false;
@@ -93,6 +202,19 @@ export default function HomeworkView() {
     setIsSubmitted(false);
     setScore(0);
     setAnsweredQuestions([]);
+    setTimeLeft(timerMinutes * 60);
+    setExamStarted(false);
+    setStudentName("");
+  };
+
+  const handlePrint = () => {
+    window.print();
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
   const getScoreMessage = () => {
@@ -106,10 +228,10 @@ export default function HomeworkView() {
   };
 
   const getScoreColor = () => {
-    if (percentage >= 80) return "text-green-600 bg-green-100";
-    if (percentage >= 60) return "text-blue-600 bg-blue-100";
-    if (percentage >= 40) return "text-orange-600 bg-orange-100";
-    return "text-red-600 bg-red-100";
+    if (percentage >= 80) return "text-green-600 bg-green-100 dark:bg-green-900/30";
+    if (percentage >= 60) return "text-blue-600 bg-blue-100 dark:bg-blue-900/30";
+    if (percentage >= 40) return "text-orange-600 bg-orange-100 dark:bg-orange-900/30";
+    return "text-red-600 bg-red-100 dark:bg-red-900/30";
   };
 
   if (isLoading) {
@@ -146,12 +268,68 @@ export default function HomeworkView() {
     </div>
   );
 
+  // Student name entry screen
+  if (isStudentView && !examStarted) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Header />
+        <main className="container max-w-lg mx-auto px-4 py-12">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-card rounded-3xl border shadow-lg p-8"
+          >
+            <div className="text-center mb-8">
+              <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                <Target className="w-8 h-8 text-primary" />
+              </div>
+              <h1 className="text-2xl font-display font-bold mb-2">{homework.topic}</h1>
+              <p className="text-muted-foreground">
+                {totalQuestions} questions
+                {timerMinutes > 0 && ` • ${timerMinutes} minutes`}
+              </p>
+              {antiCheatEnabled && (
+                <div className="flex items-center justify-center gap-2 mt-3 text-sm text-orange-600 dark:text-orange-400">
+                  <Shield className="w-4 h-4" />
+                  Anti-cheat mode enabled
+                </div>
+              )}
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="text-sm font-medium mb-2 block">Enter your name</label>
+                <Input
+                  value={studentName}
+                  onChange={(e) => setStudentName(e.target.value)}
+                  placeholder="Your full name"
+                  className="h-12"
+                  data-testid="input-student-name"
+                />
+              </div>
+              <Button
+                onClick={() => setExamStarted(true)}
+                disabled={!studentName.trim()}
+                className="w-full h-12 text-lg"
+                data-testid="button-start-exam"
+              >
+                Start Exam
+              </Button>
+            </div>
+          </motion.div>
+        </main>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <Header />
+    <div className="min-h-screen bg-background flex flex-col print:bg-white" ref={printRef}>
+      <div className="print:hidden">
+        <Header />
+      </div>
 
       <main className="flex-1 container max-w-3xl mx-auto px-4 py-8 md:py-12 flex flex-col">
-        <div className="mb-6 flex items-center justify-between gap-4">
+        <div className="mb-6 flex items-center justify-between gap-4 print:hidden">
           {!isStudentView ? (
             <Link href="/" className="inline-flex items-center text-muted-foreground hover:text-primary transition-colors">
               <ArrowLeft className="w-4 h-4 mr-2" />
@@ -160,10 +338,16 @@ export default function HomeworkView() {
           ) : (
             <div className="flex items-center gap-2 text-primary">
               <Target className="w-5 h-5" />
-              <span className="font-medium">Practice Mode</span>
+              <span className="font-medium">{studentName}</span>
             </div>
           )}
           <div className="flex items-center gap-3">
+            {timerMinutes > 0 && !completed && (
+              <div className={`flex items-center gap-1 text-sm font-medium px-3 py-1.5 rounded-full ${timeLeft < 60 ? 'bg-red-100 text-red-600 dark:bg-red-900/30' : 'bg-muted'}`}>
+                <Timer className="w-4 h-4" />
+                {formatTime(timeLeft)}
+              </div>
+            )}
             {!completed && (
               <div className="text-sm font-medium text-muted-foreground bg-muted px-3 py-1.5 rounded-full">
                 {currentQuestionIdx + 1} / {totalQuestions}
@@ -173,11 +357,16 @@ export default function HomeworkView() {
               <Star className="w-4 h-4" />
               {score} pts
             </div>
+            {!isStudentView && (
+              <Button variant="ghost" size="icon" onClick={handlePrint} title="Print exam">
+                <Printer className="w-4 h-4" />
+              </Button>
+            )}
           </div>
         </div>
 
         {!completed && (
-          <div className="w-full bg-muted rounded-full h-2 mb-6">
+          <div className="w-full bg-muted rounded-full h-2 mb-6 print:hidden">
             <motion.div 
               className="bg-primary h-2 rounded-full"
               initial={{ width: 0 }}
@@ -191,7 +380,7 @@ export default function HomeworkView() {
           <motion.div 
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
-            className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-white dark:bg-card rounded-3xl border shadow-xl"
+            className="flex-1 flex flex-col items-center justify-center text-center p-8 bg-card rounded-3xl border shadow-xl"
           >
             <div className={`w-24 h-24 ${getScoreColor()} rounded-full flex items-center justify-center mb-6`}>
               <Trophy className="w-12 h-12" />
@@ -199,8 +388,14 @@ export default function HomeworkView() {
             
             <h2 className="text-3xl md:text-4xl font-display font-bold mb-2">{getScoreMessage()}</h2>
             
-            <p className="text-muted-foreground mb-6 text-lg">
-              You completed <span className="text-foreground font-semibold">{homework.topic}</span>
+            {studentName && (
+              <p className="text-lg text-muted-foreground mb-2">
+                Well done, <span className="font-semibold text-foreground">{studentName}</span>!
+              </p>
+            )}
+            
+            <p className="text-muted-foreground mb-6">
+              Topic: <span className="text-foreground font-semibold">{homework.topic}</span>
             </p>
 
             <div className="bg-muted/50 rounded-2xl p-6 mb-8 w-full max-w-sm">
@@ -213,7 +408,7 @@ export default function HomeworkView() {
                 {score} out of {totalQuestions} correct
               </p>
               
-              <div className="flex justify-center gap-1 mt-4">
+              <div className="flex justify-center gap-1 mt-4 flex-wrap">
                 {answeredQuestions.map((correct, idx) => (
                   <div 
                     key={idx} 
@@ -224,7 +419,7 @@ export default function HomeworkView() {
               </div>
             </div>
 
-            <div className="flex gap-4 flex-wrap justify-center">
+            <div className="flex gap-4 flex-wrap justify-center print:hidden">
               <Button onClick={handleRestart} variant="outline" className="h-12 px-6">
                 <RefreshCcw className="w-4 h-4 mr-2" />
                 Try Again
@@ -240,7 +435,7 @@ export default function HomeworkView() {
           </motion.div>
         ) : (
           <div className="flex-1 flex flex-col gap-6">
-            <h1 className="text-2xl md:text-3xl font-display font-bold text-center">
+            <h1 className="text-2xl md:text-3xl font-display font-bold text-center print:text-left">
               {homework.topic}
             </h1>
 
@@ -249,9 +444,10 @@ export default function HomeworkView() {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               exit={{ opacity: 0, x: -20 }}
-              className="bg-white dark:bg-card rounded-3xl border shadow-sm p-6 md:p-10 flex-1 flex flex-col"
+              className="bg-card rounded-3xl border shadow-sm p-6 md:p-10 flex-1 flex flex-col print:shadow-none print:border-0"
             >
               <h3 className="text-xl md:text-2xl font-medium mb-8 leading-relaxed">
+                <span className="text-muted-foreground mr-2">Q{currentQuestionIdx + 1}.</span>
                 {currentQuestion.question}
               </h3>
 
@@ -330,7 +526,7 @@ export default function HomeworkView() {
                   <motion.div
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
-                    className="mt-6 pt-6 border-t"
+                    className="mt-6 pt-6 border-t print:hidden"
                   >
                     <div className="flex gap-3">
                       <div className="mt-1 flex-shrink-0">
@@ -345,7 +541,7 @@ export default function HomeworkView() {
                 )}
               </AnimatePresence>
 
-              <div className="mt-8 pt-6 flex justify-end">
+              <div className="mt-8 pt-6 flex justify-end print:hidden">
                 {!isSubmitted ? (
                   <Button 
                     onClick={handleCheck}
@@ -370,6 +566,29 @@ export default function HomeworkView() {
           </div>
         )}
       </main>
+
+      {/* Print-only full exam view */}
+      <div className="hidden print:block p-8">
+        <h1 className="text-2xl font-bold mb-2">{homework.topic}</h1>
+        <p className="text-gray-600 mb-6">Name: _________________________ Date: _____________</p>
+        <div className="space-y-6">
+          {content.map((q, idx) => (
+            <div key={idx} className="border-b pb-4">
+              <p className="font-medium mb-2">{idx + 1}. {q.question}</p>
+              {q.options && (
+                <div className="ml-4 space-y-1">
+                  {q.options.map((opt, optIdx) => (
+                    <p key={optIdx}>○ {opt}</p>
+                  ))}
+                </div>
+              )}
+              {!q.options && (
+                <p className="ml-4 text-gray-500">Answer: _________________________________</p>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
