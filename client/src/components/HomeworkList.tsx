@@ -43,12 +43,12 @@ export function HomeworkList() {
   const handleCopyLink = (e: React.MouseEvent, id: number) => {
     e.preventDefault();
     e.stopPropagation();
-    const url = `${window.location.origin}/homework/${id}`;
+    const url = `${window.location.origin}/homework/${id}?student=true`;
     navigator.clipboard.writeText(url);
     setCopiedId(id);
     toast({
-      title: "Link copied",
-      description: "Share this link with your student.",
+      title: "Student link copied",
+      description: "Share this link with your student to start the exercise.",
     });
     setTimeout(() => setCopiedId(null), 2000);
   };
