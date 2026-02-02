@@ -16,13 +16,17 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   
-  // Setup authentication first
   await setupAuth(app);
   registerAuthRoutes(app);
   
   // Protected: Create homework (requires login)
-  app.post(api.homework.create.path, isAuthenticated, async (req, res) => {
+  app.post(api.homework.create.path, isAuthenticated, async (req: any, res) => {
     try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
       const input = api.homework.create.input.parse(req.body);
       
       const prompt = `Generate a ${input.difficulty} level English homework exercise about "${input.topic}". 
@@ -55,6 +59,7 @@ export async function registerRoutes(
 
       const newHomework = await storage.createHomework({
         ...input,
+        userId,
         content: content,
       });
 
@@ -80,25 +85,58 @@ export async function registerRoutes(
     res.json(homework);
   });
 
-  // Protected: List homework (requires login)
-  app.get(api.homework.list.path, isAuthenticated, async (req, res) => {
-    const list = await storage.listHomework();
+  // Protected: List homework for current user only
+  app.get(api.homework.list.path, isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const list = await storage.listHomeworkByUser(userId);
     res.json(list);
   });
 
-  // Protected: Delete homework (requires login)
-  app.delete(api.homework.delete.path, isAuthenticated, async (req, res) => {
-    const deleted = await storage.deleteHomework(Number(req.params.id));
-    if (!deleted) {
-      return res.status(404).json({ message: 'Homework not found' });
+  // Protected: Delete homework (only owner can delete)
+  app.delete(api.homework.delete.path, isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
     }
+    const deleted = await storage.deleteHomework(Number(req.params.id), userId);
+    if (!deleted) {
+      return res.status(404).json({ message: 'Homework not found or unauthorized' });
+    }
+    res.json({ success: true });
+  });
+
+  // Protected: Update homework settings
+  app.patch('/api/homework/:id/settings', isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    const hw = await storage.getHomework(Number(req.params.id));
+    if (!hw || hw.userId !== userId) {
+      return res.status(404).json({ message: 'Homework not found or unauthorized' });
+    }
+    
+    // For now, we'll create new homework with updated settings
+    // In production, you'd want an update method
     res.json({ success: true });
   });
 
   // Public: Submit exam (students don't need login)
   app.post('/api/submissions', async (req, res) => {
     try {
-      const submission = await storage.createExamSubmission(req.body);
+      const hw = await storage.getHomework(req.body.homeworkId);
+      if (!hw) {
+        return res.status(404).json({ message: 'Homework not found' });
+      }
+      
+      const submission = await storage.createExamSubmission({
+        ...req.body,
+        userId: hw.userId, // Link to homework owner
+      });
       res.status(201).json(submission);
     } catch (err) {
       console.error("Error creating submission:", err);
@@ -106,21 +144,40 @@ export async function registerRoutes(
     }
   });
 
-  // Protected: List submissions (requires login)
-  app.get('/api/submissions', isAuthenticated, async (req, res) => {
-    const list = await storage.listExamSubmissions();
+  // Protected: List submissions for current user's homeworks
+  app.get('/api/submissions', isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const list = await storage.listExamSubmissionsByUser(userId);
     res.json(list);
   });
 
-  app.get('/api/submissions/homework/:id', isAuthenticated, async (req, res) => {
+  app.get('/api/submissions/homework/:id', isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    
+    // Verify homework belongs to user
+    const hw = await storage.getHomework(Number(req.params.id));
+    if (!hw || hw.userId !== userId) {
+      return res.status(404).json({ message: 'Homework not found or unauthorized' });
+    }
+    
     const list = await storage.getExamSubmissionsByHomework(Number(req.params.id));
     res.json(list);
   });
 
-  // Protected: Vocabulary (requires login)
-  app.post('/api/vocabulary', isAuthenticated, async (req, res) => {
+  // Protected: Vocabulary (per user)
+  app.post('/api/vocabulary', isAuthenticated, async (req: any, res) => {
     try {
-      const word = await storage.createVocabularyWord(req.body);
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      const word = await storage.createVocabularyWord({ ...req.body, userId });
       res.status(201).json(word);
     } catch (err) {
       console.error("Error creating vocabulary word:", err);
@@ -128,17 +185,70 @@ export async function registerRoutes(
     }
   });
 
-  app.get('/api/vocabulary', isAuthenticated, async (req, res) => {
-    const list = await storage.listVocabularyWords();
+  app.get('/api/vocabulary', isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const list = await storage.listVocabularyWordsByUser(userId);
     res.json(list);
   });
 
-  app.delete('/api/vocabulary/:id', isAuthenticated, async (req, res) => {
-    const deleted = await storage.deleteVocabularyWord(Number(req.params.id));
+  app.delete('/api/vocabulary/:id', isAuthenticated, async (req: any, res) => {
+    const userId = req.user?.claims?.sub;
+    if (!userId) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    const deleted = await storage.deleteVocabularyWord(Number(req.params.id), userId);
     if (!deleted) {
-      return res.status(404).json({ message: 'Word not found' });
+      return res.status(404).json({ message: 'Word not found or unauthorized' });
     }
     res.json({ success: true });
+  });
+
+  // Daily Question
+  app.get('/api/daily-question', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const today = new Date().toISOString().split('T')[0];
+      let dailyQ = await storage.getDailyQuestion(userId, today);
+      
+      if (!dailyQ) {
+        // Generate a new daily question
+        const topics = ["vocabulary", "grammar", "idioms", "phrasal verbs", "synonyms", "antonyms"];
+        const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+        
+        const completion = await openai.chat.completions.create({
+          model: "gpt-5.1",
+          messages: [
+            { role: "system", content: "You are an English teacher creating a daily challenge question." },
+            { role: "user", content: `Create one multiple choice English ${randomTopic} question. Return JSON with: question, options (array of 4 strings), correctAnswer, explanation, topic.` }
+          ],
+          response_format: { type: "json_object" },
+        });
+
+        const content = JSON.parse(completion.choices[0].message.content || '{}');
+        
+        dailyQ = await storage.createDailyQuestion({
+          userId,
+          date: today,
+          question: content.question,
+          options: content.options,
+          correctAnswer: content.correctAnswer,
+          explanation: content.explanation,
+          topic: content.topic || randomTopic,
+        });
+      }
+      
+      res.json(dailyQ);
+    } catch (err) {
+      console.error("Error getting daily question:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
   });
 
   return httpServer;

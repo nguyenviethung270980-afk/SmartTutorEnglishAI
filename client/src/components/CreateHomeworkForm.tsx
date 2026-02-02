@@ -12,6 +12,7 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
+  FormDescription,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import {
@@ -21,23 +22,36 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Sparkles, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { Sparkles, Loader2, Timer, Shield, Hash } from "lucide-react";
+import { z } from "zod";
+
+const formSchema = api.homework.create.input.extend({
+  timerMinutes: z.number().min(0).max(180).default(0),
+  questionCount: z.number().min(0).max(50).default(0),
+  antiCheat: z.boolean().default(false),
+});
+
+type FormInput = z.infer<typeof formSchema>;
 
 export function CreateHomeworkForm() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
   const createHomework = useCreateHomework();
 
-  const form = useForm<HomeworkInput>({
-    resolver: zodResolver(api.homework.create.input),
+  const form = useForm<FormInput>({
+    resolver: zodResolver(formSchema),
     defaultValues: {
       topic: "",
       difficulty: "Intermediate",
       type: "Multiple Choice",
+      timerMinutes: 0,
+      questionCount: 0,
+      antiCheat: false,
     },
   });
 
-  async function onSubmit(data: HomeworkInput) {
+  async function onSubmit(data: FormInput) {
     try {
       const newHomework = await createHomework.mutateAsync(data);
       toast({
@@ -72,7 +86,8 @@ export function CreateHomeworkForm() {
                 <FormControl>
                   <Input 
                     placeholder="e.g. Past Tense Verbs, Space Vocabulary..." 
-                    className="h-12 rounded-xl bg-white/50 border-2 focus:border-primary/50"
+                    className="h-12 rounded-xl bg-white/50 dark:bg-white/5 border-2 focus:border-primary/50"
+                    data-testid="input-topic"
                     {...field} 
                   />
                 </FormControl>
@@ -90,7 +105,7 @@ export function CreateHomeworkForm() {
                   <FormLabel>Difficulty Level</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <SelectTrigger className="h-12 rounded-xl bg-white/50 border-2">
+                      <SelectTrigger className="h-12 rounded-xl bg-white/50 dark:bg-white/5 border-2" data-testid="select-difficulty">
                         <SelectValue placeholder="Select difficulty" />
                       </SelectTrigger>
                     </FormControl>
@@ -113,7 +128,7 @@ export function CreateHomeworkForm() {
                   <FormLabel>Exercise Type</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
-                      <SelectTrigger className="h-12 rounded-xl bg-white/50 border-2">
+                      <SelectTrigger className="h-12 rounded-xl bg-white/50 dark:bg-white/5 border-2" data-testid="select-type">
                         <SelectValue placeholder="Select type" />
                       </SelectTrigger>
                     </FormControl>
@@ -129,10 +144,95 @@ export function CreateHomeworkForm() {
             />
           </div>
 
+          <div className="border-t pt-6 mt-6">
+            <h3 className="font-semibold text-sm text-muted-foreground mb-4">EXAM SETTINGS</h3>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField
+                control={form.control}
+                name="timerMinutes"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-2">
+                      <Timer className="w-4 h-4" />
+                      Timer (minutes)
+                    </FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        min={0} 
+                        max={180}
+                        placeholder="0 = no timer"
+                        className="h-12 rounded-xl bg-white/50 dark:bg-white/5 border-2"
+                        data-testid="input-timer"
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <FormDescription>0 means no time limit</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="questionCount"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel className="flex items-center gap-2">
+                      <Hash className="w-4 h-4" />
+                      Question Limit
+                    </FormLabel>
+                    <FormControl>
+                      <Input 
+                        type="number" 
+                        min={0} 
+                        max={50}
+                        placeholder="0 = all questions"
+                        className="h-12 rounded-xl bg-white/50 dark:bg-white/5 border-2"
+                        data-testid="input-question-count"
+                        {...field}
+                        onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                      />
+                    </FormControl>
+                    <FormDescription>0 means show all questions</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            <FormField
+              control={form.control}
+              name="antiCheat"
+              render={({ field }) => (
+                <FormItem className="flex flex-row items-center justify-between rounded-xl border p-4 mt-4">
+                  <div className="space-y-0.5">
+                    <FormLabel className="flex items-center gap-2">
+                      <Shield className="w-4 h-4" />
+                      Anti-Cheat Mode
+                    </FormLabel>
+                    <FormDescription>
+                      Disable copy, paste, and right-click during exam
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                      data-testid="switch-anticheat"
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          </div>
+
           <Button 
             type="submit" 
             disabled={createHomework.isPending}
             className="w-full h-14 text-lg rounded-xl bg-gradient-to-r from-primary to-primary/80 hover:to-primary shadow-lg shadow-primary/25 hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300"
+            data-testid="button-generate"
           >
             {createHomework.isPending ? (
               <>

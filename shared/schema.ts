@@ -5,6 +5,7 @@ import { z } from "zod";
 
 export const homework = pgTable("homework", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   topic: text("topic").notNull(),
   difficulty: text("difficulty").notNull(),
   type: text("type").notNull(),
@@ -18,6 +19,7 @@ export const homework = pgTable("homework", {
 export const examSubmission = pgTable("exam_submission", {
   id: serial("id").primaryKey(),
   homeworkId: integer("homework_id").notNull(),
+  userId: text("user_id").notNull(),
   studentName: text("student_name").notNull(),
   score: integer("score").notNull(),
   totalQuestions: integer("total_questions").notNull(),
@@ -29,10 +31,23 @@ export const examSubmission = pgTable("exam_submission", {
 
 export const vocabularyWord = pgTable("vocabulary_word", {
   id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
   word: text("word").notNull(),
   definition: text("definition").notNull(),
   example: text("example"),
   category: text("category"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+export const dailyQuestion = pgTable("daily_question", {
+  id: serial("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  date: text("date").notNull(),
+  question: text("question").notNull(),
+  options: jsonb("options"),
+  correctAnswer: text("correct_answer").notNull(),
+  explanation: text("explanation"),
+  topic: text("topic"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -51,9 +66,16 @@ export const insertVocabularyWordSchema = createInsertSchema(vocabularyWord).omi
   createdAt: true,
 });
 
+export const insertDailyQuestionSchema = createInsertSchema(dailyQuestion).omit({
+  id: true,
+  createdAt: true,
+});
+
 export type Homework = typeof homework.$inferSelect;
 export type InsertHomework = z.infer<typeof insertHomeworkSchema>;
 export type ExamSubmission = typeof examSubmission.$inferSelect;
 export type InsertExamSubmission = z.infer<typeof insertExamSubmissionSchema>;
 export type VocabularyWord = typeof vocabularyWord.$inferSelect;
 export type InsertVocabularyWord = z.infer<typeof insertVocabularyWordSchema>;
+export type DailyQuestion = typeof dailyQuestion.$inferSelect;
+export type InsertDailyQuestion = z.infer<typeof insertDailyQuestionSchema>;

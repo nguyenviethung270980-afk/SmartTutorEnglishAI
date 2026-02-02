@@ -1,6 +1,7 @@
 import { Header } from "@/components/Header";
 import { CreateHomeworkForm } from "@/components/CreateHomeworkForm";
 import { HomeworkList } from "@/components/HomeworkList";
+import { DailyQuestion } from "@/components/DailyQuestion";
 import { useAuth } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { GraduationCap, Sparkles, Users, Shield } from "lucide-react";
@@ -153,6 +154,15 @@ function Dashboard() {
               <p className="text-xl text-muted-foreground max-w-lg leading-relaxed">
                 Generate unlimited practice exercises tailored exactly to your level and interests. Learning English has never been this smart.
               </p>
+            </motion.div>
+
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.2, duration: 0.5 }}
+              className="mb-8"
+            >
+              <DailyQuestion />
             </motion.div>
 
             <motion.div

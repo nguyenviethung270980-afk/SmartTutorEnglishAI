@@ -1,5 +1,6 @@
 import { useEffect, useState, useMemo, useRef } from "react";
 import { useRoute, Link, useSearch } from "wouter";
+import type { Homework } from "@shared/schema";
 import { useHomework } from "@/hooks/use-homework";
 import { Header } from "@/components/Header";
 import { Button } from "@/components/ui/button";
@@ -39,9 +40,11 @@ export default function HomeworkView() {
   const searchString = useSearch();
   const searchParams = new URLSearchParams(searchString);
   const isStudentView = searchParams.get('student') === 'true';
-  const antiCheatEnabled = searchParams.get('anticheat') === 'true';
-  const timerMinutes = parseInt(searchParams.get('timer') || '0');
-  const questionLimit = parseInt(searchParams.get('questions') || '0');
+  
+  // Get settings from database (secure) instead of URL params
+  const antiCheatEnabled = homework?.antiCheat ?? false;
+  const timerMinutes = homework?.timerMinutes ?? 0;
+  const questionLimit = homework?.questionCount ?? 0;
   const { toast } = useToast();
 
   const [studentName, setStudentName] = useState("");
