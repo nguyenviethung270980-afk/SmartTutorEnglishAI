@@ -9,6 +9,7 @@ import Home from "@/pages/Home";
 import HomeworkView from "@/pages/HomeworkView";
 import ExamHistory from "@/pages/ExamHistory";
 import VocabularyBank from "@/pages/VocabularyBank";
+import Shop from "@/pages/Shop";
 
 function Router() {
   return (
@@ -17,6 +18,7 @@ function Router() {
       <Route path="/homework/:id" component={HomeworkView} />
       <Route path="/history" component={ExamHistory} />
       <Route path="/vocabulary" component={VocabularyBank} />
+      <Route path="/shop" component={Shop} />
       <Route component={NotFound} />
     </Switch>
   );

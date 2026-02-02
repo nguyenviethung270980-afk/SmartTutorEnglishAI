@@ -1,5 +1,7 @@
 import { Link, useLocation } from "wouter";
-import { GraduationCap, History, BookOpen, LogOut, User } from "lucide-react";
+import { GraduationCap, History, BookOpen, LogOut, User, ShoppingBag, Coins } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import type { UserStats } from "@shared/schema";
 import { ThemeToggle } from "./ThemeToggle";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/use-auth";
@@ -10,6 +12,11 @@ export function Header() {
   const [location] = useLocation();
   const isStudentView = location.includes('student=true');
   const { user } = useAuth();
+
+  const { data: stats } = useQuery<UserStats>({
+    queryKey: ['/api/stats'],
+    enabled: !!user,
+  });
 
   return (
     <header className="sticky top-0 z-50 w-full border-b bg-background/80 backdrop-blur-md">
@@ -35,6 +42,18 @@ export function Header() {
                 <Button variant="ghost" size="sm" data-testid="link-vocabulary">
                   <BookOpen className="w-4 h-4 mr-2" />
                   <span className="hidden sm:inline">Vocabulary</span>
+                </Button>
+              </Link>
+              <Link href="/shop">
+                <Button variant="ghost" size="sm" data-testid="link-shop">
+                  <ShoppingBag className="w-4 h-4 mr-2" />
+                  <span className="hidden sm:inline">Shop</span>
+                  {stats && (
+                    <span className="ml-1 flex items-center gap-0.5 text-yellow-600 dark:text-yellow-400">
+                      <Coins className="w-3 h-3" />
+                      {stats.points || 0}
+                    </span>
+                  )}
                 </Button>
               </Link>
             </>

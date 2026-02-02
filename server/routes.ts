@@ -5,6 +5,7 @@ import { api } from "@shared/routes";
 import { z } from "zod";
 import OpenAI from "openai";
 import { setupAuth, isAuthenticated, registerAuthRoutes } from "./replit_integrations/auth";
+import { POWERUPS, type PowerupId } from "@shared/schema";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
@@ -249,6 +250,145 @@ export async function registerRoutes(
       console.error("Error getting daily question:", err);
       res.status(500).json({ message: "Internal server error" });
     }
+  });
+
+  // Answer daily question
+  app.post('/api/daily-question/:id/answer', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { answer } = req.body;
+      const today = new Date().toISOString().split('T')[0];
+      const dailyQ = await storage.getDailyQuestion(userId, today);
+      
+      if (!dailyQ || dailyQ.id !== Number(req.params.id)) {
+        return res.status(404).json({ message: "Question not found" });
+      }
+
+      if (dailyQ.answered) {
+        return res.status(400).json({ message: "Already answered" });
+      }
+
+      const isCorrect = answer === dailyQ.correctAnswer;
+      await storage.updateDailyQuestionAnswered(dailyQ.id, isCorrect);
+      
+      // Update streak and award points
+      const pointsEarned = isCorrect ? 10 : 0;
+      if (pointsEarned > 0) {
+        await storage.addPoints(userId, pointsEarned);
+      }
+      await storage.updateStreak(userId, today, isCorrect);
+
+      const stats = await storage.getUserStats(userId);
+      
+      res.json({ 
+        correct: isCorrect, 
+        correctAnswer: dailyQ.correctAnswer,
+        explanation: dailyQ.explanation,
+        pointsEarned,
+        stats,
+      });
+    } catch (err) {
+      console.error("Error answering daily question:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // User Stats
+  app.get('/api/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      let stats = await storage.getUserStats(userId);
+      if (!stats) {
+        stats = await storage.createOrUpdateUserStats(userId, {});
+      }
+      res.json(stats);
+    } catch (err) {
+      console.error("Error getting stats:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // User Powerups
+  app.get('/api/powerups', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+      
+      const powerups = await storage.getUserPowerups(userId);
+      res.json(powerups);
+    } catch (err) {
+      console.error("Error getting powerups:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Shop - Buy Powerup
+  app.post('/api/shop/buy', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const { powerupId } = req.body as { powerupId: PowerupId };
+      const powerup = POWERUPS[powerupId];
+      
+      if (!powerup) {
+        return res.status(400).json({ message: "Invalid powerup" });
+      }
+
+      const stats = await storage.getUserStats(userId);
+      const currentPoints = stats?.points || 0;
+
+      if (currentPoints < powerup.price) {
+        return res.status(400).json({ message: "Not enough points" });
+      }
+
+      await storage.createOrUpdateUserStats(userId, { points: currentPoints - powerup.price });
+      const purchased = await storage.addPowerup(userId, powerupId);
+      const updatedStats = await storage.getUserStats(userId);
+
+      res.json({ purchased, stats: updatedStats });
+    } catch (err) {
+      console.error("Error buying powerup:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Use Powerup
+  app.post('/api/powerups/:id/use', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const used = await storage.usePowerup(userId, req.params.id);
+      if (!used) {
+        return res.status(400).json({ message: "Powerup not available" });
+      }
+
+      const powerups = await storage.getUserPowerups(userId);
+      res.json({ success: true, powerups });
+    } catch (err) {
+      console.error("Error using powerup:", err);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  });
+
+  // Get shop items
+  app.get('/api/shop', isAuthenticated, async (req: any, res) => {
+    res.json(Object.values(POWERUPS));
   });
 
   return httpServer;
